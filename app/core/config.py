@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     db_port: int
     db_name: str
 
+    jwt_secret_key: str
+    jwt_algorithm: str
+    access_token_expire_minutes: int
+    refresh_token_expire_days: int
+    cookie_secure: bool
+
     @property
     def database_url(self) -> str:
         # URL.create escapes special characters in the credentials.
