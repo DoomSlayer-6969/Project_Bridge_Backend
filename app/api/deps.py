@@ -1,16 +1,20 @@
-"""FastAPI dependencies: the DB session and one provider per repository.
+"""FastAPI dependencies: the DB session, one provider per repository, and auth.
 
 Route operations annotate parameters with the `<X>RepoDep` aliases, which are
 typed as the repository *interface*; the providers below choose the concrete
 PostgreSQL implementation. Switching databases means changing only this file.
+Protect a route by taking a `CurrentUserDep` parameter.
 """
 
 from typing import Annotated
 
-from fastapi import Depends
+import jwt
+from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db
+from app.core.jwt import ACCESS_TOKEN_COOKIE, verify_token
+from app.models import User
 from app.repositories import (
     ContextEdgeRepository,
     ContextNodeRepository,
@@ -80,3 +84,24 @@ HypothesisRepoDep = Annotated[HypothesisRepository, Depends(get_hypothesis_repo)
 ReflectionRepoDep = Annotated[ReflectionRepository, Depends(get_reflection_repo)]
 NotificationRepoDep = Annotated[NotificationRepository, Depends(get_notification_repo)]
 RefreshTokenRepoDep = Annotated[RefreshTokenRepository, Depends(get_refresh_token_repo)]
+
+
+async def get_current_user(
+    users: UserRepoDep,
+    access_token: Annotated[str | None, Cookie(alias=ACCESS_TOKEN_COOKIE)] = None,
+) -> User:
+    """The user identified by the access-token cookie; 401 if absent, invalid or expired."""
+    unauthorized = HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+    if access_token is None:
+        raise unauthorized
+    try:
+        claims = verify_token(access_token, "access")
+    except jwt.InvalidTokenError:
+        raise unauthorized from None
+    user = await users.get(claims.user_id)
+    if user is None:  # deleted after the token was issued
+        raise unauthorized
+    return user
+
+
+CurrentUserDep = Annotated[User, Depends(get_current_user)]

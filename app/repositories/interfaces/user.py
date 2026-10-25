@@ -1,7 +1,7 @@
 import uuid
 from abc import ABC, abstractmethod
 
-from app.models import User, UserPreferences
+from app.models import Address, User, UserPreferences
 
 
 class UserRepository(ABC):
@@ -11,7 +11,14 @@ class UserRepository(ABC):
     async def get(self, user_id: uuid.UUID) -> User | None: ...
 
     @abstractmethod
+    async def get_with_address(self, user_id: uuid.UUID) -> User | None:
+        """Like `get`, with `user.address` eagerly loaded so it can be read or replaced."""
+
+    @abstractmethod
     async def get_by_email(self, email: str) -> User | None: ...
+
+    @abstractmethod
+    async def get_by_username(self, username: str) -> User | None: ...
 
     @abstractmethod
     async def get_by_email_or_username(self, email: str, username: str) -> User | None:
@@ -20,6 +27,17 @@ class UserRepository(ABC):
     @abstractmethod
     async def add(self, user: User) -> User:
         """Persist a new user and return it with generated fields populated."""
+
+    @abstractmethod
+    async def update(self, user: User) -> User:
+        """Persist changes made to a loaded user (and its address)."""
+
+    @abstractmethod
+    async def delete_address(self, address: Address) -> None:
+        """Mark an address for deletion; it is removed by the next `update`.
+
+        Unlink it first (`user.address = None`).
+        """
 
     @abstractmethod
     async def delete(self, user: User) -> None:

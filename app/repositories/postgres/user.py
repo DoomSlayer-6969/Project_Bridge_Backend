@@ -2,8 +2,9 @@ import uuid
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models import User, UserPreferences
+from app.models import Address, User, UserPreferences
 from app.repositories.interfaces import UserRepository
 
 
@@ -14,8 +15,15 @@ class PostgresUserRepository(UserRepository):
     async def get(self, user_id: uuid.UUID) -> User | None:
         return await self.db.get(User, user_id)
 
+    async def get_with_address(self, user_id: uuid.UUID) -> User | None:
+        stmt = select(User).where(User.id == user_id).options(selectinload(User.address))
+        return await self.db.scalar(stmt)
+
     async def get_by_email(self, email: str) -> User | None:
         return await self.db.scalar(select(User).where(User.email == email))
+
+    async def get_by_username(self, username: str) -> User | None:
+        return await self.db.scalar(select(User).where(User.username == username))
 
     async def get_by_email_or_username(self, email: str, username: str) -> User | None:
         stmt = select(User).where(or_(User.email == email, User.username == username)).limit(1)
@@ -26,6 +34,13 @@ class PostgresUserRepository(UserRepository):
         await self.db.flush()
         await self.db.refresh(user)
         return user
+
+    async def update(self, user: User) -> User:
+        await self.db.flush()
+        return user
+
+    async def delete_address(self, address: Address) -> None:
+        await self.db.delete(address)
 
     async def delete(self, user: User) -> None:
         await self.db.delete(user)

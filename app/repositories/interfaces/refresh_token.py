@@ -16,8 +16,12 @@ class RefreshTokenRepository(ABC):
         """Persist a newly issued token and return it with generated fields populated."""
 
     @abstractmethod
-    async def revoke(self, token_id: uuid.UUID, replaced_by_id: uuid.UUID | None = None) -> None:
-        """Revoke one token if still active; on rotation, record its replacement."""
+    async def revoke(self, token_id: uuid.UUID, replaced_by_id: uuid.UUID | None = None) -> bool:
+        """Revoke one token if still active; on rotation, record its replacement.
+
+        Atomic: returns False if the token was already revoked (e.g. a concurrent
+        request rotated it first), so only one caller can ever rotate a token.
+        """
 
     @abstractmethod
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> None:

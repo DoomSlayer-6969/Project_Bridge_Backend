@@ -1,6 +1,8 @@
 import uuid
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 PASSWORD_MIN_LENGTH = 8
 
@@ -35,6 +37,34 @@ class SignupRequest(BaseModel):
 
 
 class SignupResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: EmailStr
+    username: str
+
+
+class LoginRequest(BaseModel):
+    """Password plus exactly one of email or username."""
+
+    email: EmailStr | None = None
+    username: str | None = Field(default=None, min_length=1)
+    # No strength rules here: they apply when a password is set, not when it's checked.
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, email: str | None) -> str | None:
+        return email.lower() if email is not None else None
+
+    @model_validator(mode="after")
+    def exactly_one_identifier(self) -> Self:
+        if (self.email is None) == (self.username is None):
+            raise ValueError("Provide exactly one of email or username")
+        return self
+
+
+class LoginResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID

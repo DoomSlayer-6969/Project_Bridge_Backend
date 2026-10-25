@@ -23,11 +23,11 @@ class Address(Base):
     __tablename__ = "addresses"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    street: Mapped[str | None] = mapped_column(String(255), nullable=False)
-    city: Mapped[str | None] = mapped_column(String(100), nullable=False)
-    state: Mapped[str | None] = mapped_column(String(100), nullable=False)
-    country: Mapped[str | None] = mapped_column(String(100), nullable=False)
-    pin_code: Mapped[str | None] = mapped_column(String(20), nullable=False)
+    street: Mapped[str] = mapped_column(String(255), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    state: Mapped[str] = mapped_column(String(100), nullable=False)
+    country: Mapped[str] = mapped_column(String(100), nullable=False)
+    pin_code: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
 class User(Base):
