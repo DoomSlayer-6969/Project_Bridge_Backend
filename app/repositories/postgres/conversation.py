@@ -32,6 +32,10 @@ class PostgresConversationRepository(ConversationRepository):
         await self.db.refresh(conversation)
         return conversation
 
+    async def update(self, conversation: Conversation) -> Conversation:
+        await self.db.flush()
+        return conversation
+
     async def delete(self, conversation: Conversation) -> None:
         await self.db.delete(conversation)
         await self.db.flush()

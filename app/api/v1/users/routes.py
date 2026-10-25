@@ -4,8 +4,13 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUserDep, UserRepoDep
 from app.core.jwt import verify_password
-from app.models import Address, User
-from app.schemas import UserProfileResponse, UserProfileUpdateRequest
+from app.models import DEFAULT_PREFERENCES, Address, User, UserPreferences
+from app.schemas import (
+    UserPreferencesResponse,
+    UserPreferencesUpdateRequest,
+    UserProfileResponse,
+    UserProfileUpdateRequest,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -58,3 +63,23 @@ async def update_me(
     except IntegrityError:
         # A concurrent request took the email between the check and the update.
         raise HTTPException(status.HTTP_409_CONFLICT, _EMAIL_TAKEN) from None
+
+
+@router.get("/me/preferences", response_model=UserPreferencesResponse)
+async def get_preferences(user: CurrentUserDep, users: UserRepoDep) -> UserPreferences:
+    """The saved preferences, or the defaults if the user hasn't saved any yet."""
+    preferences = await users.get_preferences(user.id)
+    return preferences or UserPreferences(user_id=user.id, **DEFAULT_PREFERENCES)
+
+
+@router.patch("/me/preferences", response_model=UserPreferencesResponse)
+async def update_preferences(
+    payload: UserPreferencesUpdateRequest, user: CurrentUserDep, users: UserRepoDep
+) -> UserPreferences:
+    """Update the fields sent; the first update creates the row, with defaults for the rest."""
+    preferences = await users.get_preferences(user.id)
+    if preferences is None:
+        preferences = UserPreferences(user_id=user.id, **DEFAULT_PREFERENCES)
+    for field in payload.model_fields_set:
+        setattr(preferences, field, getattr(payload, field))
+    return await users.save_preferences(preferences)

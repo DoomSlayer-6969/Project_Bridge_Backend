@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-The SQLAlchemy models for the full data model exist, along with their repositories and an initial Alembic migration. The only feature routes are the auth routes (signup, login, logout, refresh) and `users/me` (GET and PATCH; see "Auth" below). There are no tests yet.
+The SQLAlchemy models for the full data model exist, along with their repositories and an initial Alembic migration. The only feature routes are the auth routes (signup, login, logout, refresh), `users/me` and `users/me/preferences` (GET and PATCH each; see "Auth" below) and the conversation and message routes (see "Conversations" below). There are no tests yet.
 
 ## Layout and conventions
 
@@ -30,8 +30,8 @@ Every layer is a package. Its `__init__.py` re-exports the public names, and oth
   - `ContextEdgeRepository` is separate because edges are queried on their own.
   - `RefreshTokenRepository` (`add`, `get`, `revoke` → bool, `revoke_all_for_user`) has its own repository, separate from `UserRepository`.
 - Deletes cascade in the database (`passive_deletes`), so child objects already loaded in the same session aren't evicted. After deleting a parent, don't reuse its loaded children.
-- `app/api/`: `deps.py` has the DI providers: `SessionDep`, plus a `get_<x>_repo` provider and an `<X>RepoDep` `Annotated` alias for each repository. Each alias is typed as the interface, and its provider returns the `Postgres…` implementation. That makes `deps.py` the only place that picks the database: route operations take `<X>RepoDep` parameters and never import `Postgres…` classes. In tests, override `get_db`, or a `get_<x>_repo` provider to substitute a fake. FastAPI caches `get_db` per request, so every repository in a request shares one session and one transaction. Endpoints take repositories through these aliases and never build sessions themselves. Versions live in `api/v1/`, `api/v2/` and so on. Each version's `__init__.py` builds an `api_router` from its feature routers (`endpoints/health.py` and the `auth/` and `users/` packages), and `main.py` mounts it under `settings.api_v1_prefix` (`/api/v1`).
-- Routes so far: `/api/v1/health`, `/api/v1/health/db` (runs `SELECT 1`), `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `POST /api/v1/auth/refresh`, `GET /api/v1/users/me` and `PATCH /api/v1/users/me` (both protected).
+- `app/api/`: `deps.py` has the DI providers: `SessionDep`, plus a `get_<x>_repo` provider and an `<X>RepoDep` `Annotated` alias for each repository. Each alias is typed as the interface, and its provider returns the `Postgres…` implementation. That makes `deps.py` the only place that picks the database: route operations take `<X>RepoDep` parameters and never import `Postgres…` classes. In tests, override `get_db`, or a `get_<x>_repo` provider to substitute a fake. FastAPI caches `get_db` per request, so every repository in a request shares one session and one transaction. Endpoints take repositories through these aliases and never build sessions themselves. Versions live in `api/v1/`, `api/v2/` and so on. Each version's `__init__.py` builds an `api_router` from its feature routers (`endpoints/health.py` and the `auth/`, `users/` and `conversations/` packages), and `main.py` mounts it under `settings.api_v1_prefix` (`/api/v1`).
+- Routes so far: `/api/v1/health`, `/api/v1/health/db` (runs `SELECT 1`), `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `POST /api/v1/auth/refresh`, `GET` / `PATCH /api/v1/users/me`, `GET` / `PATCH /api/v1/users/me/preferences`, and the protected `/api/v1/conversations` routes listed under "Conversations".
 
 ## Auth
 
@@ -57,7 +57,23 @@ Every layer is a package. Its `__init__.py` re-exports the public names, and oth
   - Editable: `display_name`, `phone_no` (optional `+`, then 7-15 digits), `gender` (`male` / `female` / `other` / `prefer_not_to_say`), `date_of_birth` (not in the future), `profile_picture` (http(s) URL, at most 2048 chars, stored as a string), `address`, `email`. Strings are stripped, must be non-empty and fit their column length.
   - `address` must be complete (all five fields, matching the NOT NULL columns). It's created if the user has none, otherwise updated in place (same row). `address: null` unlinks it and deletes the row via `delete_address`, which only marks it; the following `update` flushes it.
   - Changing `email` requires `current_password` (422 without it; 401 "Incorrect password" if wrong). The new email is lowercased; 409 if another account has it, including a unique-constraint race at flush. The email can't be set to null. The session isn't affected: tokens carry the user id, not the email.
+- `GET /api/v1/users/me/preferences` returns `UserPreferencesResponse` (`app/schemas/user_preferences.py`). Until the user saves preferences, there's no `user_preferences` row and it returns `DEFAULT_PREFERENCES` (`app/models/user_preferences.py`, exported from `app.models`) without creating one. Any code that needs a user's effective preferences must fall back to it when `get_preferences` returns `None`. The defaults are privacy-first: `memory_allowed`, `reflection_allowed` and `notification_enabled` are `false` and `default_mode` is `"general"`, so every pipeline is opt-in.
+  - `PATCH /api/v1/users/me/preferences` (`UserPreferencesUpdateRequest`) is a partial update of the fields sent. The first PATCH creates the row, using the defaults for unsent fields (`save_preferences`). `null` is rejected with 422 (the columns are NOT NULL). `default_mode` is any stripped, non-empty string up to 32 characters; the three flags are booleans. Types and allowed values will be decided later. Unknown fields are ignored.
+  - `default_mode` isn't applied anywhere yet; `POST /conversations` still requires `initial_mode` from the client, by decision.
 - Password rules (8+ characters, uppercase, lowercase, digit, special character) are enforced on `SignupRequest` in `app/schemas/auth.py`, not in the database, because only the Argon2 hash is stored. Username has no format rules, by decision; it's only unique and non-null.
+
+## Conversations
+
+`app/api/v1/conversations/routes.py`, schemas in `app/schemas/conversation.py`. Every route is protected (`CurrentUserDep`).
+
+- `POST /conversations` (`{initial_mode}`) → 201. `GET /conversations` lists the user's own, newest first. `GET /conversations/{id}`. `POST /conversations/{id}/end` sets `ended_at` (409 if already ended; saved through `ConversationRepository.update`). `DELETE /conversations/{id}` → 204; messages go with it through the DB cascade.
+- `POST /conversations/{id}/messages` (`{content, active_mode, memory_allowed}`) → 201. All three are required; there are no server-side defaults (nothing creates `UserPreferences` yet). `sender` is always set to `"user"` by the server; a client-sent `sender` is ignored. Content is stripped and must be non-empty. 409 if the conversation has ended (its messages stay readable).
+  - Every message is stored, but its `memory_allowed` is stored as the client's value AND the user's preference (`DEFAULT_PREFERENCES`, i.e. false, if none are saved). The response shows the stored value. A message stored with `memory_allowed` false must never be sent to the LLM for output generation; the future LLM step only needs to check `message.memory_allowed`. `GET /conversations/{id}/messages` lists them oldest first.
+- Modes (`initial_mode`, `active_mode`) are any stripped, non-empty string up to 32 characters until the allowed values are decided.
+- List routes take `offset` (≥ 0) and `limit` (1-100; default 50 for conversations, 100 for messages).
+- A conversation owned by another user returns the same 404 "Conversation not found" as a nonexistent one (`_get_own_conversation`), so ids can't be probed. Check ownership this way in every route under `{id}`.
+- Assistant replies (the LLM step) aren't implemented yet.
+- Postgres' `now()` is the transaction start time, so rows inserted in one transaction share `started_at` / `created_at` and their relative order is undefined. Each request currently inserts at most one, so this doesn't matter yet.
 
 ## Stack
 

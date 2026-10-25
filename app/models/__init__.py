@@ -12,7 +12,7 @@ from app.models.notification import Notification
 from app.models.refresh_token import RefreshToken
 from app.models.reflection import Reflection
 from app.models.user import Address, User
-from app.models.user_preferences import UserPreferences
+from app.models.user_preferences import DEFAULT_PREFERENCES, UserPreferences
 
 __all__ = [
     "Address",
@@ -20,6 +20,7 @@ __all__ = [
     "ContextEdge",
     "ContextNode",
     "Conversation",
+    "DEFAULT_PREFERENCES",
     "Hypothesis",
     "HypothesisEvidence",
     "Message",

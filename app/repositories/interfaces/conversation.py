@@ -19,5 +19,9 @@ class ConversationRepository(ABC):
         """Persist a new conversation and return it with generated fields populated."""
 
     @abstractmethod
+    async def update(self, conversation: Conversation) -> Conversation:
+        """Persist changes made to a loaded conversation."""
+
+    @abstractmethod
     async def delete(self, conversation: Conversation) -> None:
         """Delete the conversation and its messages."""

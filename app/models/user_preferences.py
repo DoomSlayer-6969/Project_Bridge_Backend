@@ -9,6 +9,14 @@ from app.models.base import Base
 if TYPE_CHECKING:
     from app.models.user import User
 
+# Used until the user saves their own preferences: every pipeline is opt-in.
+DEFAULT_PREFERENCES = {
+    "default_mode": "general",
+    "memory_allowed": False,
+    "reflection_allowed": False,
+    "notification_enabled": False,
+}
+
 
 class UserPreferences(Base):
     __tablename__ = "user_preferences"
